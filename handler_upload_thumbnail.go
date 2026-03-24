@@ -1,10 +1,12 @@
 package main
 
 import (
-	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
@@ -42,11 +44,11 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	}
 	defer file.Close()
 	mediatype := header.Header.Get("Content-Type")
-	data, err := io.ReadAll(file)
-	if err != nil {
-		respondWithError(w, http.StatusBadRequest, "Unable to read form file", err)
-		return
-	}
+	// data, err := io.ReadAll(file)
+	// if err != nil {
+	// 	respondWithError(w, http.StatusBadRequest, "Unable to read form file", err)
+	// 	return
+	// }
 	video, err := cfg.db.GetVideo(videoID)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Unable to fetch video", err)
@@ -57,16 +59,27 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	base64Encoded := base64.StdEncoding.EncodeToString(data)
-	base64DataURL := fmt.Sprintf("data:%s;base64,%s", mediatype, base64Encoded)
+	path := filepath.Join(cfg.assetsRoot, fmt.Sprintf("%s.%s", videoIDString, strings.Split(mediatype, "/")[1]))
+	toSave, err := os.Create(path)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Error occurred while saving file", err)
+		return
+	}
 
-	video.ThumbnailURL = &base64DataURL
+	_, err = io.Copy(toSave, file)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Error while copying file", err)
+		return
+	}
+
+	thumbnailUrl := fmt.Sprintf("http://localhost:%s/%s", cfg.port, path)
+
+	video.ThumbnailURL = &thumbnailUrl
 	err = cfg.db.UpdateVideo(video)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Unable to update video", err)
 		return
 	}
-	// TODO: implement the upload here
 
 	respondWithJSON(w, http.StatusOK, video)
 }
